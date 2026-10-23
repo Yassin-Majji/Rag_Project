@@ -1,12 +1,13 @@
 from .CLI_methodes import CLIMethods
 from fire import Fire
 
+
 def main():
     Fire(CLIMethods)
-        
+
 
 if __name__ == '__main__':
-    try:
+    # try:
         main()
-    except:
-        print("hello my freind there is error hhhhh")
+    # except:
+    #     print("hello my freind there is error hhhhh")
