@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 import sys
 from time import sleep
+import json
 
 
 class BaseParser:
@@ -14,8 +15,10 @@ class BaseParser:
     @classmethod
     def chunk_content(cls, content: str, split_by) -> list:
         if split_by == '.':
-            return re.split(r"(?<!\d)\.(?!\d)", content)
-        return (content.split(split_by))
+            return re.split(r"((?<!\d)\.(?!\d))", content)
+        if not split_by:
+            return(list(content))
+        return (re.split(rf"({split_by})", content))
 
     @classmethod
     def merge_small_chunks(cls, max_size_chunck, chuncks):
@@ -41,23 +44,37 @@ class BaseParser:
         return result
 
     @classmethod
+    def chunck_files(cls, self):
+        for p in self.paths:
+            print("file: ", p)
+            self.chunck_file_step(p)
+            self.merge_chuks_step()
+            self.handle_the_large_chunks_step()
+            cls.save_chunckings_in_file(self.valid_chunks, p)
+        print("every things is good~~")
+
+    @classmethod
     def chunk(cls, chunck: str, chuncking_by, max_chunck_size):
-        if chuncking_by == ',':
-            print("\n\n_______________________________________________________")
-            print("chunck is:   ",chunck)
         chuncks = cls.chunk_content(chunck, chuncking_by)
-        print("chunks result is:      ",chuncks)
         chuncks = cls.merge_small_chunks(max_chunck_size, chuncks)
-        print("chunks result after is:      ",chuncks)
-        print("________________________________________________________________________")
         return chuncks
 
     @classmethod
-    def save_chunckings_in_file(cls, chunks):
-        with open('result.txt', 'a') as f:
-            for ch in chunks:
-                f.write(ch)
-                f.write('\n\n\n\n')
+    def save_chunckings_in_file(cls, chunks, source):
+        with open('/goinfre/result.json', 'a') as f:
+            chunk_data = {}
+            result = []
+            l = 0
+            for i, ch in enumerate(chunks):
+                chunk_data = {}
+                # chunk_data['chunck_id'] = i
+                chunk_data['source'] = source
+                chunk_data['start'] = l
+                l += len(ch)
+                chunk_data['end'] = l - 1
+                chunk_data['content'] = ch
+                result.append(chunk_data)
+            json.dump(result, f, indent=4)
 
 
 class TxtParser:
@@ -67,15 +84,8 @@ class TxtParser:
         self.content: str = ""
         self.valid_chunks: list = []
         self.chunks = []
-        self.chunck_files()
+        BaseParser.chunck_files(self)
 
-    def chunck_files(self):
-        for p in self.paths:
-            self.chunck_file_step(p)
-            self.merge_chuks_step()
-            self.handle_the_large_chunks_step()
-            BaseParser.save_chunckings_in_file(self.valid_chunks)
-            print("every things is good~~")
 
     def chunck_file_step(self, p) -> None:
         self.content = BaseParser.read_file_content(p)
@@ -85,7 +95,7 @@ class TxtParser:
         self.chunks = BaseParser.merge_small_chunks(self.max_chunck_size, self.chunks)
 
     def handle_the_large_chunks_step(self):
-        chuncking_by = ['.', ',', ';', '\n', ' ']
+        chuncking_by = ['.', ',', ';', '\n', ' ', '', '']
         while len(self.chunks):
             chunck = self.chunks.pop(0)
             if len(chunck) <= self.max_chunck_size:
@@ -93,25 +103,19 @@ class TxtParser:
                 continue
             chuncks = BaseParser.chunk(chunck, chuncking_by[0], self.max_chunck_size)
             for chunck_by in chuncking_by[1:]:
-                print(f"chuncks: {chuncks}")
                 new_chunks = []
                 finished = True
                 for ch in chuncks:
-                    print(f"ch chosen:     {ch}")
-                    print(f"it will spit by:  {chunck_by} {ord(chunck_by)}")
                     if len(ch) > self.max_chunck_size:
                         finished = False
                         return_chunks = BaseParser.chunk(ch, chunck_by, self.max_chunck_size)
-                        print(f"the return chunks {return_chunks}")
                         new_chunks += return_chunks
                     else:
-                        new_chunks += ch
-                print(f"result: {new_chunks}")
+                        new_chunks += [ch]
                 if finished:
                     self.valid_chunks += chuncks
                     break
                 chuncks = new_chunks
-        print(self.valid_chunks)
 
 
 
@@ -119,11 +123,86 @@ class TxtParser:
 
 
 class MarkdownParser:
-    pass
+    def __init__(self, max_chunck_size, paths):
+        self.paths = paths
+        self.max_chunck_size = max_chunck_size
+        self.content: str = ""
+        self.valid_chunks: list = []
+        self.chunks = []
+        BaseParser.chunck_files(self)
+
+
+    def chunck_file_step(self, p) -> None:
+        self.content = BaseParser.read_file_content(p)
+        self.chunks = BaseParser.chunk_content(self.content, '\n# ')
+
+    def merge_chuks_step(self):
+        self.chunks = BaseParser.merge_small_chunks(self.max_chunck_size, self.chunks)
+
+    def handle_the_large_chunks_step(self):
+        chuncking_by = ['\n## ', '\n### ', ';', '\n#### ', '\n#### ', '\n##### ', '\n###### ', '.', ',', ';', '\n', ' ', '', '']
+        while len(self.chunks):
+            chunck = self.chunks.pop(0)
+            if len(chunck) <= self.max_chunck_size:
+                self.valid_chunks.append(chunck)
+                continue
+            chuncks = BaseParser.chunk(chunck, chuncking_by[0], self.max_chunck_size)
+            for chunck_by in chuncking_by[1:]:
+                new_chunks = []
+                finished = True
+                for ch in chuncks:
+                    if len(ch) > self.max_chunck_size:
+                        finished = False
+                        return_chunks = BaseParser.chunk(ch, chunck_by, self.max_chunck_size)
+                        new_chunks += return_chunks
+                    else:
+                        new_chunks += [ch]
+                if finished:
+                    self.valid_chunks += chuncks
+                    break
+                chuncks = new_chunks
+        
 
 
 class PythonParser:
-    pass
+    def __init__(self, max_chunck_size, paths):
+        self.paths = paths
+        self.max_chunck_size = max_chunck_size
+        self.content: str = ""
+        self.valid_chunks: list = []
+        self.chunks = []
+        BaseParser.chunck_files(self)
+
+
+    def chunck_file_step(self, p) -> None:
+        self.content = BaseParser.read_file_content(p)
+        self.chunks = BaseParser.chunk_content(self.content, 'class')
+
+    def merge_chuks_step(self):
+        self.chunks = BaseParser.merge_small_chunks(self.max_chunck_size, self.chunks)
+
+    def handle_the_large_chunks_step(self):
+        chuncking_by = ['def', 'while', 'for', '\n', ' ', '', '']
+        while len(self.chunks):
+            chunck = self.chunks.pop(0)
+            if len(chunck) <= self.max_chunck_size:
+                self.valid_chunks.append(chunck)
+                continue
+            chuncks = BaseParser.chunk(chunck, chuncking_by[0], self.max_chunck_size)
+            for chunck_by in chuncking_by[1:]:
+                new_chunks = []
+                finished = True
+                for ch in chuncks:
+                    if len(ch) > self.max_chunck_size:
+                        finished = False
+                        return_chunks = BaseParser.chunk(ch, chunck_by, self.max_chunck_size)
+                        new_chunks += return_chunks
+                    else:
+                        new_chunks += [ch]
+                if finished:
+                    self.valid_chunks += chuncks
+                    break
+                chuncks = new_chunks
 
 
 class Index:
@@ -133,7 +212,6 @@ class Index:
         self.txt_files: list[str] = []
         self.markdown_files: list[str] = []
         self.python_files: list[str] = []
-
         self.parse_files()
 
     def find_files_paths(self, extension: str, file_type: list) -> list[str]:
@@ -147,6 +225,14 @@ class Index:
         self.find_files_paths('*.txt', self.txt_files)
         self.find_files_paths('*.md', self.markdown_files)
         self.find_files_paths('*.py', self.python_files)
+        print("txt files: ", len(self.txt_files))
+        print("markdown fles: ", len(self.markdown_files))
+        print("python files: ", len(self.python_files))
+
+        # sys.exit(1)
+        f = open('result.json', 'w')
+        f.close()
+
         TxtParser(self.max_chunck_size, self.txt_files)
-        # PythonParser(self.max_chunck_size, self.python_files)
-        # MarkdownParser(self.max_chunck_size, self.markdown_files)
+        MarkdownParser(self.max_chunck_size, self.markdown_files)
+        PythonParser(self.max_chunck_size, self.python_files)
